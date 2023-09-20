@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  EnforceIMDSV2StepFunction:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Definition:
+        StartAt: DescribeInstances
+        States:
+          DescribeInstances:
+            Type: Task
+            Parameters:
+              Filters:
+                - Name: metadata-options.http-tokens
+                  Values:
+                    - optional
+            Resource: arn:aws:states:::aws-sdk:ec2:describeInstances
+            Next: Reservations
+          Reservations:
+            Type: Map
+            ItemProcessor:
+              ProcessorConfig:
+                Mode: INLINE
+              StartAt: Instances
+              States:
+                Instances:
+                  Type: Map
+                  ItemProcessor:
+                    ProcessorConfig:
+                      Mode: INLINE
+                    StartAt: StartAutomationExecution
+                    States:
+                      StartAutomationExecution:
+                        End: true
+                        Parameters:
+                          DocumentName: AWSSupport-ConfigureEC2Metadata
+                          Parameters:
+                            EnforceIMDSv2:
+                              - required
+                            InstanceId.$: States.Array( $.InstanceId)
+                        Resource: arn:aws:states:::aws-sdk:ssm:startAutomationExecution
+                        Type: Task
+                  End: true
+                  ItemsPath: $.Instances
+            ItemsPath: $.Reservations
+            End: true
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "ec2:DescribeInstances"
+                - "ec2:ModifyInstanceMetadataOptions"
+                - "ssm:StartAutomationExecution"
+                - "ssm:GetAutomationExecution"
+              Resource: "*"
+
+    
